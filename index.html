@@ -439,6 +439,19 @@ tbody tr:hover{background:var(--bg2)}
         <button class="btn-sec" onclick="exportarPDF()">&#8595; Reporte</button>
       </div>
     </div>
+
+    <!-- CAJA -->
+    <div id="caja-panel" style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);padding:20px 24px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--tx)">Caja</div>
+          <div style="font-size:12px;color:var(--tx2);margin-top:2px" id="caja-estado-txt">Sin caja abierta</div>
+        </div>
+        <div style="display:flex;gap:8px" id="caja-btns"></div>
+      </div>
+      <div id="caja-resumen"></div>
+    </div>
+
     <div class="kpi-grid" id="rcards"></div>
     <div class="charts-row">
       <div class="chart-box"><div class="chart-title" id="chart-period-title">Ventas por mes</div><div class="bars" id="rbars" style="height:120px"></div></div>
@@ -524,6 +537,7 @@ tbody tr:hover{background:var(--bg2)}
 // ── Estado ──────────────────────────────────────────────────
 let role='admin', pagoA='Efectivo', pagoV='Efectivo';
 let vnum=1, carritoA=[], carritoV=[], imgPrevData='';
+let cajas=[];
 
 let cats=[
   {id:1,nombre:'Sábanas',color:'#185FA5'},
@@ -569,7 +583,7 @@ function save(){
   if(!_dbReady){ _pendingSave=true; return; }
   try{
     db.ref('armenia').set({
-      cats, productos, clientes, ventas, fiados, vnum
+      cats, productos, clientes, ventas, fiados, vnum, cajas
     }).catch(e=>console.warn('Firebase write error:',e));
   }catch(e){}
 }
@@ -584,6 +598,7 @@ function load(){
       if(d.clientes) clientes = d.clientes;
       if(d.ventas) ventas = d.ventas;
       if(d.fiados) fiados = d.fiados;
+      if(d.cajas) cajas = d.cajas;
       if(d.vnum) vnum = parseInt(d.vnum);
     }
     _dbReady = true;
@@ -610,6 +625,7 @@ function load(){
     if(d.clientes) clientes = d.clientes;
     if(d.ventas) ventas = d.ventas;
     if(d.fiados) fiados = d.fiados;
+    if(d.cajas) cajas = d.cajas;
     if(d.vnum) vnum = parseInt(d.vnum);
     // Refrescar vistas activas
     const secActiva = document.querySelector('.admin-content .sec.active');
@@ -692,7 +708,7 @@ function showAdmin(id,btn){
   if(id==='productos')renderTabla('');
   if(id==='categorias')renderCats();
   if(id==='clientes')renderCli();
-  if(id==='reportes'){poblarMeses();renderRep();}
+  if(id==='reportes'){poblarMeses();renderRep();renderCaja();}
   if(id==='ventas')renderVentas('vlist');
   if(id==='pos')renderGridA(productos);
   if(id==='fiado')renderFiado('fiado-list','fiado-kpis');
@@ -1399,6 +1415,146 @@ function confirmarImport(rows){
   });
   save();poblarFiltros();renderTabla('');renderGridA(productos);cerrarM();
   showToast(`✓ ${importados} productos importados`);
+}
+
+// ── Caja ──────────────────────────────────────────────────────
+function cajaActiva(){
+  return cajas.length ? cajas[cajas.length-1] : null;
+}
+
+function renderCaja(){
+  const c = cajaActiva();
+  const btns = document.getElementById('caja-btns');
+  const estado = document.getElementById('caja-estado-txt');
+  const resumen = document.getElementById('caja-resumen');
+  if(!btns||!estado||!resumen) return;
+
+  if(!c || c.cerrada){
+    estado.textContent = c&&c.cerrada ? `Última caja cerrada: ${c.fechaApertura} → ${c.fechaCierre}` : 'Sin caja abierta';
+    btns.innerHTML = `<button class="btn-p" onclick="abrirCaja()">+ Abrir caja</button>`;
+    if(c&&c.cerrada){
+      resumen.innerHTML = renderResumenCaja(c);
+    } else {
+      resumen.innerHTML = `<p style="font-size:13px;color:var(--tx3)">Abrí una nueva caja para comenzar a registrar el período.</p>`;
+    }
+  } else {
+    // Caja abierta
+    const ventasCaja = ventas.filter(v=> v.ts >= c.tsApertura);
+    const efectivoCaja = ventasCaja.filter(v=>v.pago==='Efectivo').reduce((s,v)=>s+v.total,0);
+    const transferenciaCaja = ventasCaja.filter(v=>v.pago==='Transferencia').reduce((s,v)=>s+v.total,0);
+    const tarjetaCaja = ventasCaja.filter(v=>v.pago==='Tarjeta').reduce((s,v)=>s+v.total,0);
+    const totalEsperado = c.fondoInicial + efectivoCaja;
+
+    estado.textContent = `Abierta desde ${c.fechaApertura} · ${ventasCaja.length} venta${ventasCaja.length!==1?'s':''}`;
+    btns.innerHTML = `<button class="btn-sec" style="border-color:var(--rj);color:var(--rj-t);background:var(--rj-l)" onclick="cerrarCaja()">Cerrar caja</button>`;
+    resumen.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
+        <div class="kpi"><div class="kpi-lbl">Fondo inicial</div><div class="kpi-val">${fmt(c.fondoInicial)}</div></div>
+        <div class="kpi"><div class="kpi-lbl">Ventas en efectivo</div><div class="kpi-val" style="color:var(--vd-t)">${fmt(efectivoCaja)}</div><div class="kpi-note">${ventasCaja.filter(v=>v.pago==='Efectivo').length} ventas</div></div>
+        <div class="kpi"><div class="kpi-lbl">Transferencias</div><div class="kpi-val" style="color:var(--az-t)">${fmt(transferenciaCaja)}</div><div class="kpi-note">${ventasCaja.filter(v=>v.pago==='Transferencia').length} ventas</div></div>
+        <div class="kpi"><div class="kpi-lbl">Tarjetas</div><div class="kpi-val" style="color:var(--am-t)">${fmt(tarjetaCaja)}</div><div class="kpi-note">${ventasCaja.filter(v=>v.pago==='Tarjeta').length} ventas</div></div>
+      </div>
+      <div style="margin-top:14px;background:var(--az-l);border-radius:var(--rl);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:12px;color:var(--az-t);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Total esperado en caja (efectivo)</div>
+          <div style="font-size:28px;font-weight:700;color:var(--az-t);margin-top:4px">${fmt(totalEsperado)}</div>
+          <div style="font-size:12px;color:var(--az-t);margin-top:2px">Fondo inicial ${fmt(c.fondoInicial)} + ventas efectivo ${fmt(efectivoCaja)}</div>
+        </div>
+      </div>`;
+  }
+}
+
+function renderResumenCaja(c){
+  return `<div style="background:var(--bg2);border-radius:var(--rl);padding:16px 20px">
+    <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:12px">Resumen del último cierre · ${c.fechaApertura} → ${c.fechaCierre}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+      <div class="kpi"><div class="kpi-lbl">Fondo inicial</div><div class="kpi-val">${fmt(c.fondoInicial)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Ventas efectivo</div><div class="kpi-val" style="color:var(--vd-t)">${fmt(c.efectivo)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Transferencias</div><div class="kpi-val" style="color:var(--az-t)">${fmt(c.transferencia)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Tarjetas</div><div class="kpi-val" style="color:var(--am-t)">${fmt(c.tarjeta)}</div></div>
+      <div class="kpi" style="border:2px solid var(--az-l)"><div class="kpi-lbl">Total esperado caja</div><div class="kpi-val" style="color:var(--az-t)">${fmt(c.fondoInicial+c.efectivo)}</div></div>
+    </div>
+  </div>`;
+}
+
+function abrirCaja(){
+  document.getElementById('mc').innerHTML=`<div class="mo" onclick="if(event.target===this)cerrarM()">
+    <div class="mdl" style="width:320px">
+      <div class="mdl-t">Abrir caja</div>
+      <div style="font-size:13px;color:var(--tx2)">Ingresá el monto con el que arranca la caja hoy.</div>
+      <div class="fg"><label class="fl">Fondo inicial ($)</label>
+        <input class="fi" type="number" id="caja-fondo" placeholder="Ej: 50000" autofocus>
+      </div>
+      <div class="fg"><label class="fl">Nota (opcional)</label>
+        <input class="fi" id="caja-nota" placeholder="Ej: inicio de semana">
+      </div>
+      <div class="mfoot">
+        <button class="bcancel" onclick="cerrarM()">Cancelar</button>
+        <button class="btn-p" onclick="confirmarAbrirCaja()">Abrir caja</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function confirmarAbrirCaja(){
+  const fondo = parseFloat(document.getElementById('caja-fondo').value)||0;
+  const nota = document.getElementById('caja-nota').value.trim();
+  const now = new Date();
+  cajas.push({
+    id: Date.now(),
+    fondoInicial: fondo,
+    nota,
+    fechaApertura: now.toLocaleDateString('es-AR'),
+    tsApertura: now.getTime(),
+    cerrada: false
+  });
+  save(); cerrarM();
+  renderCaja();
+  showToast('Caja abierta con fondo de '+fmt(fondo));
+}
+
+function cerrarCaja(){
+  const c = cajaActiva();
+  if(!c||c.cerrada) return;
+  const ventasCaja = ventas.filter(v=> v.ts >= c.tsApertura);
+  const efectivo = ventasCaja.filter(v=>v.pago==='Efectivo').reduce((s,v)=>s+v.total,0);
+  const transferencia = ventasCaja.filter(v=>v.pago==='Transferencia').reduce((s,v)=>s+v.total,0);
+  const tarjeta = ventasCaja.filter(v=>v.pago==='Tarjeta').reduce((s,v)=>s+v.total,0);
+  const now = new Date();
+
+  document.getElementById('mc').innerHTML=`<div class="mo" onclick="if(event.target===this)cerrarM()">
+    <div class="mdl" style="width:380px">
+      <div class="mdl-t">Cerrar caja</div>
+      <div style="background:var(--bg2);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:8px;font-size:13px">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--tx2)">Fondo inicial</span><span style="font-weight:700">${fmt(c.fondoInicial)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--tx2)">Ventas en efectivo</span><span style="font-weight:700;color:var(--vd-t)">${fmt(efectivo)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--tx2)">Transferencias</span><span style="font-weight:700;color:var(--az-t)">${fmt(transferencia)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--tx2)">Tarjetas</span><span style="font-weight:700;color:var(--am-t)">${fmt(tarjeta)}</span></div>
+        <div style="height:1px;background:var(--bd)"></div>
+        <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:var(--tx);font-weight:600">Total esperado en caja</span><span style="font-weight:700;color:var(--az-t)">${fmt(c.fondoInicial+efectivo)}</span></div>
+        <div style="font-size:11px;color:var(--tx3)">${ventasCaja.length} ventas desde ${c.fechaApertura}</div>
+      </div>
+      <div class="mfoot">
+        <button class="bcancel" onclick="cerrarM()">Volver</button>
+        <button class="btn-p" style="background:var(--rj-t)" onclick="confirmarCerrarCaja(${efectivo},${transferencia},${tarjeta})">Confirmar cierre</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function confirmarCerrarCaja(efectivo, transferencia, tarjeta){
+  const c = cajaActiva();
+  if(!c) return;
+  const now = new Date();
+  c.cerrada = true;
+  c.fechaCierre = now.toLocaleDateString('es-AR');
+  c.tsCierre = now.getTime();
+  c.efectivo = efectivo;
+  c.transferencia = transferencia;
+  c.tarjeta = tarjeta;
+  save(); cerrarM();
+  renderCaja();
+  showToast('Caja cerrada correctamente');
 }
 
 // ── Toast ─────────────────────────────────────────────────────
