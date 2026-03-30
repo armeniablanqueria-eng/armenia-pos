@@ -172,9 +172,11 @@ tbody tr:hover{background:var(--bg2)}
 .pc.sin-stock{opacity:.4;pointer-events:none}
 
 /* CARRITO */
-.cpanel{background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);display:flex;flex-direction:column;overflow:hidden;height:100%;align-self:stretch}
+.cpanel{background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);display:flex;flex-direction:column;overflow:hidden;height:calc(100vh - var(--topbar-h) - var(--tabs-h) - 68px);position:sticky;top:0}
 .chead{padding:11px 14px;border-bottom:1px solid var(--bd);font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.carrito-body.open{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
 .citems{overflow-y:auto;padding:7px;display:flex;flex-direction:column;gap:5px;flex:1;min-height:0}
+.cfoot{padding:12px 14px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:8px;flex-shrink:0}
 .ci{background:var(--bg2);border-radius:var(--r);padding:7px 9px;display:flex;align-items:center;gap:7px}
 .ci-inf{flex:1;min-width:0}
 .ci-nm{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--tx)}
@@ -183,7 +185,6 @@ tbody tr:hover{background:var(--bg2)}
 .qb{width:22px;height:22px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg);color:var(--tx);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
 .qb:hover{background:var(--bg3)}
 .qn{font-size:13px;font-weight:700;min-width:16px;text-align:center}
-.cfoot{padding:12px 14px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:8px}
 .tl{font-size:12px;color:var(--tx2)}.tv{font-size:21px;font-weight:700;color:var(--tx)}
 .fg{display:flex;flex-direction:column;gap:3px}
 .fl{font-size:12px;color:var(--tx2);font-weight:500}
