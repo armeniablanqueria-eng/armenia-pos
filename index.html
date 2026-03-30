@@ -720,7 +720,7 @@ function gridHTML(lista,t){
       <div class="pc-img">${p.img?`<img src="${p.img}" alt="">`:'<span style="font-size:28px">🏷️</span>'}</div>
       <div class="pc-body">
         <div class="pc-cat">${p.cat}</div>
-        <div class="pc-nom">${p.nombre}</div>
+        <div class="pc-nom" title="${p.nombre}">${p.nombre}</div>
         <div class="pc-pre">${fmt(p.precio)}</div>
         <div class="pc-bot">
           <span class="pc-stk">${p.stock===0?'Sin stock':p.stock+' en stock'}</span>
