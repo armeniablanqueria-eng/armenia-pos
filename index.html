@@ -1219,7 +1219,13 @@ function renderRep(){
       <div class="blab">${d.lbl}</div>
     </div>`).join('');
   const pagoMap={};
-  vFilt.forEach(v=>{pagoMap[v.pago]=(pagoMap[v.pago]||0)+v.total;});
+  vFilt.forEach(v=>{
+    if(v.pagos2 && v.pagos2.length){
+      v.pagos2.forEach(p=>{ pagoMap[p.medio]=(pagoMap[p.medio]||0)+p.monto; });
+    } else {
+      pagoMap[v.pago]=(pagoMap[v.pago]||0)+v.total;
+    }
+  });
   const pagos=Object.entries(pagoMap).sort(([,a],[,b])=>b-a);
   const totP=pagos.reduce((s,[,v])=>s+v,0)||1;
   const tagC={Efectivo:'tag-e',Transferencia:'tag-t',Tarjeta:'tag-tj'};
@@ -1512,9 +1518,9 @@ function renderCaja(){
   } else {
     // Caja abierta
     const ventasCaja = ventas.filter(v=> v.ts >= c.tsApertura);
-    const efectivoCaja = ventasCaja.filter(v=>v.pago==='Efectivo').reduce((s,v)=>s+v.total,0);
-    const transferenciaCaja = ventasCaja.filter(v=>v.pago==='Transferencia').reduce((s,v)=>s+v.total,0);
-    const tarjetaCaja = ventasCaja.filter(v=>v.pago==='Tarjeta').reduce((s,v)=>s+v.total,0);
+    const efectivoCaja = ventasCaja.reduce((s,v)=>s+(v.pagos2?v.pagos2.filter(p=>p.medio==='Efectivo').reduce((a,p)=>a+p.monto,0):(v.pago==='Efectivo'?v.total:0)),0);
+    const transferenciaCaja = ventasCaja.reduce((s,v)=>s+(v.pagos2?v.pagos2.filter(p=>p.medio==='Transferencia').reduce((a,p)=>a+p.monto,0):(v.pago==='Transferencia'?v.total:0)),0);
+    const tarjetaCaja = ventasCaja.reduce((s,v)=>s+(v.pagos2?v.pagos2.filter(p=>p.medio==='Tarjeta').reduce((a,p)=>a+p.monto,0):(v.pago==='Tarjeta'?v.total:0)),0);
     const totalEsperado = c.fondoInicial + efectivoCaja;
 
     estado.textContent = `Abierta desde ${c.fechaApertura} · ${ventasCaja.length} venta${ventasCaja.length!==1?'s':''}`;
@@ -1589,9 +1595,9 @@ function cerrarCaja(){
   const c = cajaActiva();
   if(!c||c.cerrada) return;
   const ventasCaja = ventas.filter(v=> v.ts >= c.tsApertura);
-  const efectivo = ventasCaja.filter(v=>v.pago==='Efectivo').reduce((s,v)=>s+v.total,0);
-  const transferencia = ventasCaja.filter(v=>v.pago==='Transferencia').reduce((s,v)=>s+v.total,0);
-  const tarjeta = ventasCaja.filter(v=>v.pago==='Tarjeta').reduce((s,v)=>s+v.total,0);
+  const efectivo = ventasCaja.reduce((s,v)=>s+(v.pagos2?v.pagos2.filter(p=>p.medio==='Efectivo').reduce((a,p)=>a+p.monto,0):(v.pago==='Efectivo'?v.total:0)),0);
+  const transferencia = ventasCaja.reduce((s,v)=>s+(v.pagos2?v.pagos2.filter(p=>p.medio==='Transferencia').reduce((a,p)=>a+p.monto,0):(v.pago==='Transferencia'?v.total:0)),0);
+  const tarjeta = ventasCaja.reduce((s,v)=>s+(v.pagos2?v.pagos2.filter(p=>p.medio==='Tarjeta').reduce((a,p)=>a+p.monto,0):(v.pago==='Tarjeta'?v.total:0)),0);
   const now = new Date();
 
   document.getElementById('mc').innerHTML=`<div class="mo" onclick="if(event.target===this)cerrarM()">
