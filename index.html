@@ -968,6 +968,13 @@ function saldarFiado(fidx){
 }
 
 // ── Historial ─────────────────────────────────────────────────
+function pagoTag(v){
+  if(v.pagos2 && v.pagos2.length>1){
+    return v.pagos2.map(p=>`<span class="ptag ${p.medio==='Efectivo'?'tag-e':p.medio==='Transferencia'?'tag-t':'tag-tj'}" style="font-size:10px">${p.medio} ${fmt(p.monto)}</span>`).join(' ');
+  }
+  return `<span class="ptag ${v.pago==='Efectivo'?'tag-e':v.pago==='Transferencia'?'tag-t':'tag-tj'}">${v.pago}</span>`;
+}
+
 function renderVentas(elId){
   const el=document.getElementById(elId);
   const esAdmin = elId==='vlist';
@@ -980,7 +987,7 @@ function renderVentas(elId){
         <div class="vdet">${v.items.map(i=>i.qty+'x '+i.nombre).join(', ')} · ${v.fecha}</div>
         ${v.nota?`<div style="margin-top:4px;font-size:11px;color:var(--am-t);background:var(--am-l);padding:2px 8px;border-radius:var(--r);display:inline-block">📝 ${v.nota}</div>`:''}
       </div>
-      <span class="ptag ${v.pago==='Efectivo'?'tag-e':v.pago==='Transferencia'?'tag-t':'tag-tj'}">${v.pago}</span>
+      <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">${pagoTag(v)}</div>
       <span class="vtot">${fmt(v.total)}</span>
       ${esAdmin?`<div style="display:flex;gap:5px;flex-shrink:0">
         <button class="btn-edit" onclick="editarVenta(${idx})">Editar</button>
@@ -992,8 +999,13 @@ function renderVentas(elId){
 function editarVenta(idx){
   const v=ventas[idx];
   if(!v)return;
+  // Detectar si ya tiene pagos mixtos
+  const p1 = v.pagos2?.[0] || {medio:v.pago, monto:v.total};
+  const p2 = v.pagos2?.[1] || {medio:'', monto:0};
+  const opts = ['Efectivo','Transferencia','Tarjeta'];
+  const sel = (m,val) => opts.map(o=>`<option value="${o}" ${o===val?'selected':''}>${o}</option>`).join('');
   document.getElementById('mc').innerHTML=`<div class="mo" onclick="if(event.target===this)cerrarM()">
-    <div class="mdl" style="width:380px">
+    <div class="mdl" style="width:400px">
       <div class="mdl-t">Editar venta ${v.num}</div>
       <div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px;font-size:13px;color:var(--tx2)">
         ${v.items.map(i=>i.qty+'x '+i.nombre).join(', ')}
@@ -1002,14 +1014,27 @@ function editarVenta(idx){
         <input class="fi" id="ev-cli" value="${v.cliente}">
       </div>
       <div class="fg"><label class="fl">Total ($)</label>
-        <input class="fi" type="number" id="ev-total" value="${v.total}">
+        <input class="fi" type="number" id="ev-total" value="${v.total}" oninput="evActualizar()">
       </div>
-      <div class="fg"><label class="fl">Medio de pago</label>
-        <select class="fi" id="ev-pago">
-          <option ${v.pago==='Efectivo'?'selected':''}>Efectivo</option>
-          <option ${v.pago==='Transferencia'?'selected':''}>Transferencia</option>
-          <option ${v.pago==='Tarjeta'?'selected':''}>Tarjeta</option>
-        </select>
+      <div style="font-size:12px;font-weight:600;color:var(--tx2);margin-top:4px">Medios de pago</div>
+      <div style="background:var(--bg2);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:grid;grid-template-columns:1fr 140px;gap:8px;align-items:center">
+          <select class="fi" id="ev-pago1" onchange="evActualizar()">${sel('',p1.medio)}</select>
+          <input class="fi" type="number" id="ev-monto1" value="${p1.monto}" oninput="evActualizar()" placeholder="Monto">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx2);cursor:pointer">
+            <input type="checkbox" id="ev-mixto" onchange="evToggleMixto()" ${p2.medio?'checked':''} style="accent-color:var(--az)">
+            Agregar segundo medio de pago
+          </label>
+        </div>
+        <div id="ev-pago2-wrap" style="display:${p2.medio?'grid':'none'};grid-template-columns:1fr 140px;gap:8px;align-items:center">
+          <select class="fi" id="ev-pago2" onchange="evActualizar()">
+            <option value="">— Seleccionar —</option>${sel('',p2.medio)}
+          </select>
+          <input class="fi" type="number" id="ev-monto2" value="${p2.monto||''}" oninput="evActualizar()" placeholder="Monto">
+        </div>
+        <div id="ev-diferencia" style="font-size:12px;color:var(--tx2)"></div>
       </div>
       <div class="fg"><label class="fl">Nota</label>
         <input class="fi" id="ev-nota" value="${v.nota||''}">
@@ -1020,6 +1045,32 @@ function editarVenta(idx){
       </div>
     </div>
   </div>`;
+  evActualizar();
+}
+
+function evToggleMixto(){
+  const checked = document.getElementById('ev-mixto').checked;
+  document.getElementById('ev-pago2-wrap').style.display = checked ? 'grid' : 'none';
+  if(!checked){
+    document.getElementById('ev-monto2').value='';
+    document.getElementById('ev-pago2').value='';
+  }
+  evActualizar();
+}
+
+function evActualizar(){
+  const total = parseFloat(document.getElementById('ev-total')?.value)||0;
+  const m1 = parseFloat(document.getElementById('ev-monto1')?.value)||0;
+  const mixto = document.getElementById('ev-mixto')?.checked;
+  const m2 = mixto ? (parseFloat(document.getElementById('ev-monto2')?.value)||0) : 0;
+  const dif = document.getElementById('ev-diferencia');
+  if(!dif) return;
+  if(!mixto){ dif.textContent=''; return; }
+  const suma = m1+m2;
+  const diff = total-suma;
+  if(diff===0) dif.innerHTML='<span style="color:var(--vd-t)">✓ Los montos coinciden con el total</span>';
+  else if(diff>0) dif.innerHTML=`<span style="color:var(--am-t)">Falta distribuir: ${fmt(diff)}</span>`;
+  else dif.innerHTML=`<span style="color:var(--rj-t)">Excede el total en: ${fmt(Math.abs(diff))}</span>`;
 }
 
 function guardarVenta(idx){
@@ -1027,8 +1078,24 @@ function guardarVenta(idx){
   if(!v)return;
   v.cliente=document.getElementById('ev-cli').value.trim()||v.cliente;
   v.total=parseFloat(document.getElementById('ev-total').value)||v.total;
-  v.pago=document.getElementById('ev-pago').value;
   v.nota=document.getElementById('ev-nota').value.trim();
+  const mixto = document.getElementById('ev-mixto').checked;
+  const pago1 = document.getElementById('ev-pago1').value;
+  const monto1 = parseFloat(document.getElementById('ev-monto1').value)||0;
+  if(mixto){
+    const pago2 = document.getElementById('ev-pago2').value;
+    const monto2 = parseFloat(document.getElementById('ev-monto2').value)||0;
+    if(pago2 && monto2>0){
+      v.pagos2 = [{medio:pago1,monto:monto1},{medio:pago2,monto:monto2}];
+      v.pago = pago1+'+'+pago2;
+    } else {
+      v.pagos2 = null;
+      v.pago = pago1;
+    }
+  } else {
+    v.pagos2 = null;
+    v.pago = pago1;
+  }
   save();cerrarM();
   renderVentas('vlist');
   showToast('Venta '+v.num+' actualizada');
