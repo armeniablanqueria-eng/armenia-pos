@@ -1506,6 +1506,12 @@ function confirmarImport(rows){
 
     // Buscar por codigo (key estable), sin importar si el nombre cambió
     let existe = codigo ? productos.find(p=>p.codigo===codigo) : null;
+    // Si no encontró por codigo pero hay codigo, puede ser q el producto existe sin codigo aún
+    // En ese caso buscar por nombre y asignarle el codigo
+    if(!existe && codigo && mode==='merge'){
+      existe = productos.find(p=>!p.codigo && p.nombre.toLowerCase()===nombre.toLowerCase());
+      if(existe) existe.codigo = codigo; // asignar codigo para futuras importaciones
+    }
     // Fallback: buscar por nombre solo si no hay codigo
     if(!existe && mode==='merge' && !codigo) existe = productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
 
