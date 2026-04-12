@@ -582,6 +582,7 @@ const db = firebase.database();
 
 let _dbReady = false;
 let _pendingSave = false;
+let _importing = false;
 
 // ── Persistencia ─────────────────────────────────────────────
 function save(){
@@ -622,7 +623,7 @@ function load(){
 
   // Escuchar cambios en tiempo real
   db.ref('armenia').on('value', snap=>{
-    if(!_dbReady) return;
+    if(!_dbReady || _importing) return;
     const d = snap.val();
     if(!d) return;
     if(d.cats && d.cats.length) cats = d.cats;
@@ -1506,8 +1507,6 @@ function confirmarImport(rows){
 
     // Buscar por codigo (key estable), sin importar si el nombre cambió
     let existe = codigo ? productos.find(p=>p.codigo===codigo) : null;
-    console.log('Fila:', nombre, '| codigo excel:', codigo, '| encontrado:', existe ? existe.nombre : 'NO');
-    console.log('Stock leído:', stock, '| Precio leído:', precio, '| Costo leído:', costo);
     // Si no encontró por codigo pero hay codigo, puede ser q el producto existe sin codigo aún
     // En ese caso buscar por nombre y asignarle el codigo
     if(!existe && codigo && mode==='merge'){
@@ -1535,7 +1534,10 @@ function confirmarImport(rows){
     importados++;
   });
 
-  save();poblarFiltros();renderTabla('');renderGridA(productos);cerrarM();
+  _importing = true;
+  save();
+  setTimeout(()=>{ _importing = false; }, 3000);
+  poblarFiltros();renderTabla('');renderGridA(productos);cerrarM();
   showToast(`✓ ${importados} productos importados`);
 }
 
