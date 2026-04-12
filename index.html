@@ -582,7 +582,6 @@ const db = firebase.database();
 
 let _dbReady = false;
 let _pendingSave = false;
-let _importing = false;
 
 // ── Persistencia ─────────────────────────────────────────────
 function save(){
@@ -623,7 +622,7 @@ function load(){
 
   // Escuchar cambios en tiempo real
   db.ref('armenia').on('value', snap=>{
-    if(!_dbReady || _importing) return;
+    if(!_dbReady) return;
     const d = snap.val();
     if(!d) return;
     if(d.cats && d.cats.length) cats = d.cats;
@@ -1401,11 +1400,8 @@ function exportarPDF(){
   showToast('Reporte exportado');
 }
 function exportarStock(){
-  // Asignar codigo corto a productos que no lo tengan
-  productos.forEach((p,i)=>{ if(!p.codigo) p.codigo='P'+String(i+1).padStart(3,'0'); });
-  save();
-  const ws=XLSX.utils.json_to_sheet(productos.map(p=>({'Codigo':p.codigo,'Nombre':p.nombre,'Categoria':p.cat,'Descripcion':p.desc||'','Precio_Costo':p.costo,'Precio_Publico':p.precio,'Margen_%':mg(p),'Stock':p.stock,'Imagen_URL':p.img&&p.img.startsWith('http')?p.img:''})));
-  ws['!cols']=[{wch:10},{wch:35},{wch:18},{wch:40},{wch:15},{wch:15},{wch:10},{wch:8},{wch:40}];
+  const ws=XLSX.utils.json_to_sheet(productos.map(p=>({'Nombre':p.nombre,'Categoria':p.cat,'Descripcion':p.desc||'','Precio_Costo':p.costo,'Precio_Publico':p.precio,'Margen_%':mg(p),'Stock':p.stock,'Imagen_URL':p.img&&p.img.startsWith('http')?p.img:''})));
+  ws['!cols']=[{wch:35},{wch:18},{wch:40},{wch:15},{wch:15},{wch:10},{wch:8},{wch:40}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Productos');
   XLSX.writeFile(wb,'Armenia_Stock_'+new Date().toLocaleDateString('es-AR').replace(/\//g,'-')+'.xlsx');
   showToast('Stock exportado');
@@ -1475,69 +1471,27 @@ function importarExcel(input){
 function confirmarImport(rows){
   const mode=document.querySelector('input[name="imp-mode"]:checked')?.value||'merge';
   const col=(row,...keys)=>{for(const k of keys){const found=Object.keys(row).find(r=>r.trim().toLowerCase()===k.toLowerCase());if(found!==undefined)return row[found];}return '';};
-  const parsearNum = v => {
-    if(v===''||v===null||v===undefined) return null;
-    const str = String(v).replace(/\./g,'').replace(/,/g,'.').replace(/[^0-9.-]/g,'');
-    const n = parseFloat(str);
-    return isNaN(n) ? null : Math.round(n);
-  };
-
-  // Guardar imágenes por codigo antes de reemplazar
-  const imgs = {};
-  productos.forEach(p=>{ if(p.codigo) imgs[p.codigo]=p.img; });
-
-  if(mode==='replace') productos=[];
-
   let importados=0;
+  if(mode==='replace')productos=[];
   rows.forEach(r=>{
-    const nombre=String(col(r,'Nombre','nombre','NOMBRE','Producto','producto')||'').trim();
+    const nombre=String(col(r,'Nombre','nombre','NOMBRE')||'').trim();
     if(!nombre||nombre.toLowerCase().includes('obligatorio'))return;
-    const cat   = String(col(r,'Categoria','categoría','Categoría','categoria','CAT')||'').trim()||'Sin categoría';
-    const costo  = parsearNum(col(r,'Precio_Costo','Costo','costo','precio_costo','P. Costo ($)'));
-    const precio = parsearNum(col(r,'Precio_Publico','Precio','precio','precio_publico','P. Público ($)','P. Publico ($)'));
-    const stock  = parsearNum(col(r,'Stock','stock','STOCK'));
-    const img    = String(col(r,'Imagen_URL','imagen','imagen_url','Imagen')||'').trim();
-    const desc   = String(col(r,'Descripcion','descripcion','Descripción','descripción','desc')||'').trim();
-    const codigo = String(col(r,'Codigo','codigo','CODIGO')||'').trim();
-
+    const cat=String(col(r,'Categoria','categoría','Categoría','categoria','CAT')||'').trim()||'Sin categoría';
+    const costo=parseInt(col(r,'Precio_Costo','Costo','costo','precio_costo')||0)||0;
+    const precio=parseInt(col(r,'Precio_Publico','Precio','precio','precio_publico')||0)||0;
+    const stock=parseInt(col(r,'Stock','stock','STOCK')||0)||0;
+    const img=String(col(r,'Imagen_URL','imagen','imagen_url','Imagen')||'').trim();
+    const desc=String(col(r,'Descripcion','descripcion','Descripción','descripción','desc')||'').trim();
     if(!cats.find(c=>c.nombre.toLowerCase()===cat.toLowerCase())){
       const colors=['#185FA5','#3B6D11','#854F0B','#993556','#5F5E5A','#0F6E56','#633806','#72243E'];
       cats.push({id:Date.now()+Math.random(),nombre:cat,color:colors[cats.length%colors.length]});
     }
-
-    // Buscar por codigo (key estable), sin importar si el nombre cambió
-    let existe = codigo ? productos.find(p=>p.codigo===codigo) : null;
-    // Si no encontró por codigo pero hay codigo, puede ser q el producto existe sin codigo aún
-    // En ese caso buscar por nombre y asignarle el codigo
-    if(!existe && codigo && mode==='merge'){
-      existe = productos.find(p=>!p.codigo && p.nombre.toLowerCase()===nombre.toLowerCase());
-      if(existe){ existe.codigo = codigo; console.log('Asignado codigo por nombre:', existe.nombre); }
-    }
-    // Fallback: buscar por nombre solo si no hay codigo
-    if(!existe && mode==='merge' && !codigo) existe = productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
-
-    // Imagen: respetar la guardada en base64, no pisar con string vacío
-    const imgFinal = img || (codigo && imgs[codigo]) || (existe ? existe.img : '');
-
-    if(existe){
-      existe.nombre = nombre; // actualiza nombre aunque haya cambiado
-      existe.cat    = cat;
-      if(costo!==null)  existe.costo  = costo;
-      if(precio!==null) existe.precio = precio;
-      if(stock!==null)  existe.stock  = stock;
-      if(desc)          existe.desc   = desc;
-      existe.img = imgFinal;
-    } else {
-      productos.push({id:Date.now()+Math.random(),codigo,nombre,cat,
-        costo:costo||0,precio:precio||0,stock:stock||0,img:imgFinal,desc});
-    }
+    const existe=productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
+    if(existe){existe.cat=cat;existe.costo=costo;existe.precio=precio;existe.stock=stock;if(img)existe.img=img;if(desc)existe.desc=desc;}
+    else productos.push({id:Date.now()+Math.random(),nombre,cat,costo,precio,stock,img:img||'',desc});
     importados++;
   });
-
-  _importing = true;
-  save();
-  setTimeout(()=>{ _importing = false; }, 3000);
-  poblarFiltros();renderTabla('');renderGridA(productos);cerrarM();
+  save();poblarFiltros();renderTabla('');renderGridA(productos);cerrarM();
   showToast(`✓ ${importados} productos importados`);
 }
 
