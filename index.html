@@ -582,6 +582,7 @@ const db = firebase.database();
 
 let _dbReady = false;
 let _pendingSave = false;
+let _importing = false;
 
 // ── Persistencia ─────────────────────────────────────────────
 function save(){
@@ -622,7 +623,7 @@ function load(){
 
   // Escuchar cambios en tiempo real
   db.ref('armenia').on('value', snap=>{
-    if(!_dbReady) return;
+    if(!_dbReady || _importing) return;
     const d = snap.val();
     if(!d) return;
     if(d.cats && d.cats.length) cats = d.cats;
@@ -1471,27 +1472,43 @@ function importarExcel(input){
 function confirmarImport(rows){
   const mode=document.querySelector('input[name="imp-mode"]:checked')?.value||'merge';
   const col=(row,...keys)=>{for(const k of keys){const found=Object.keys(row).find(r=>r.trim().toLowerCase()===k.toLowerCase());if(found!==undefined)return row[found];}return '';};
+
+  // Backup de imágenes por nombre antes de cualquier operación
+  const imgBackup={};
+  productos.forEach(p=>{ imgBackup[p.nombre.toLowerCase()]=p.img; });
+
+  if(mode==='replace') productos=[];
+
   let importados=0;
-  if(mode==='replace')productos=[];
   rows.forEach(r=>{
     const nombre=String(col(r,'Nombre','nombre','NOMBRE')||'').trim();
     if(!nombre||nombre.toLowerCase().includes('obligatorio'))return;
-    const cat=String(col(r,'Categoria','categoría','Categoría','categoria','CAT')||'').trim()||'Sin categoría';
-    const costo=parseInt(col(r,'Precio_Costo','Costo','costo','precio_costo')||0)||0;
-    const precio=parseInt(col(r,'Precio_Publico','Precio','precio','precio_publico')||0)||0;
-    const stock=parseInt(col(r,'Stock','stock','STOCK')||0)||0;
-    const img=String(col(r,'Imagen_URL','imagen','imagen_url','Imagen')||'').trim();
-    const desc=String(col(r,'Descripcion','descripcion','Descripción','descripción','desc')||'').trim();
+    const cat  = String(col(r,'Categoria','categoría','Categoría','categoria','CAT')||'').trim()||'Sin categoría';
+    const desc = String(col(r,'Descripcion','descripcion','Descripción','descripción','desc')||'').trim();
+    const imgURL= String(col(r,'Imagen_URL','imagen','imagen_url','Imagen')||'').trim();
+    const num = v => { const s=String(v??'').replace(/\s/g,'').replace(/\.(?=\d{3})/g,'').replace(',','.'); const n=parseFloat(s); return isNaN(n)?0:Math.round(n); };
+    const costo  = num(col(r,'Precio_Costo','Costo','costo','precio_costo','P. Costo ($)'));
+    const precio = num(col(r,'Precio_Publico','Precio','precio','precio_publico','P. Público ($)','P. Publico ($)'));
+    const stock  = num(col(r,'Stock','stock','STOCK'));
+    // Imagen: URL del Excel si existe, sino recuperar la guardada en base64
+    const imgFinal = imgURL || imgBackup[nombre.toLowerCase()] || '';
     if(!cats.find(c=>c.nombre.toLowerCase()===cat.toLowerCase())){
       const colors=['#185FA5','#3B6D11','#854F0B','#993556','#5F5E5A','#0F6E56','#633806','#72243E'];
       cats.push({id:Date.now()+Math.random(),nombre:cat,color:colors[cats.length%colors.length]});
     }
-    const existe=productos.find(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
-    if(existe){existe.cat=cat;existe.costo=costo;existe.precio=precio;existe.stock=stock;if(img)existe.img=img;if(desc)existe.desc=desc;}
-    else productos.push({id:Date.now()+Math.random(),nombre,cat,costo,precio,stock,img:img||'',desc});
+    const idx=productos.findIndex(p=>p.nombre.toLowerCase()===nombre.toLowerCase());
+    if(idx>=0){
+      // Reemplazar el objeto completo para garantizar que todos los campos se actualicen
+      productos[idx]={...productos[idx],nombre,cat,costo,precio,stock,desc,img:imgFinal};
+    } else {
+      productos.push({id:Date.now()+Math.random(),nombre,cat,costo,precio,stock,img:imgFinal,desc});
+    }
     importados++;
   });
-  save();poblarFiltros();renderTabla('');renderGridA(productos);cerrarM();
+  _importing=true;
+  save();
+  setTimeout(()=>{ _importing=false; },4000);
+  poblarFiltros();renderTabla('');renderGridA(productos);cerrarM();
   showToast(`✓ ${importados} productos importados`);
 }
 
